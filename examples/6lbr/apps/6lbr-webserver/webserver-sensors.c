@@ -55,28 +55,30 @@
 #define UIP_IP_BUF ((struct uip_ip_hdr *)&uip_buf[UIP_LLH_LEN])
 
 static const char * graph_top =
-    "<script type=\"text/javascript\" src=\"https://www.google.com/jsapi\"></script>"
+    "<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>"
     "<script type=\"text/javascript\">"
-    "google.load(\"visualization\", \"1\", {packages:[\"corechart\"]});"
-    "google.setOnLoadCallback(drawChart);"
-    "function drawChart(){var data=google.visualization.arrayToDataTable([";
+    "function drawChart(){var ctx=document.getElementById('chart_div').getContext('2d');"
+    "var data={labels:[";
 
-static const char * graph_1_column =
-    "var view = new google.visualization.DataView(data);"
-    "view.setColumns([0, 2]);";
-static const char * graph_2_column =
-    "var view = new google.visualization.DataView(data);"
-    "view.setColumns([0, 2, 3]);";
 static const char * graph_bottom =
-    "var chart=new google.visualization.ColumnChart(document.getElementById('chart_div'));"
-    "chart.draw(view, options);"
-    "var selectHandler = function(e) {"
-    "window.location = 'sensor?ip=' + data.getValue(chart.getSelection()[0]['row'], 1 );"
-    "};"
-    "google.visualization.events.addListener(chart, 'select', selectHandler);"
-    "}"
-    "</script>"
-    "<div id=\"chart_div\" style=\"width: 900px; height: 500px;\"></div>";
+    "],datasets:[{label:'PRR Up',data:[";
+for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+  if(node_info_table[i].isused && node_info_table[i].messages_sent > 0 && node_info_table[i].replies_sent > 0) {
+    float prr_up = 100.0 * (node_info_table[i].messages_sent - node_info_table[i].up_messages_lost)/node_info_table[i].messages_sent;
+    add("%.1f,", prr_up);
+  }
+}
+add("]},{label:'PRR Down',data:[");
+for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+  if(node_info_table[i].isused && node_info_table[i].messages_sent > 0 && node_info_table[i].replies_sent > 0) {
+    float prr_down = 100.0 * (node_info_table[i].replies_sent - node_info_table[i].down_messages_lost)/node_info_table[i].replies_sent;
+    add("%.1f,", prr_down);
+  }
+}
+add("]}]};var options={scales:{yAxes:[{ticks:{beginAtZero:true,max:100}}]}};var chart=new Chart(ctx,{type:'bar',data:data,options:options});"
+"}"
+"</script>"
+"<canvas id=\"chart_div\" style=\"width: 900px; height: 500px;\"></canvas>";
 
 static
 PT_THREAD(generate_sensors_info(struct httpd_state *s))
@@ -239,89 +241,66 @@ PT_THREAD(generate_sensors_tree(struct httpd_state *s))
 {
   static int i;
   PSOCK_BEGIN(&s->sout);
+  add("<canvas id=\"sensor_tree_canvas\" width=\"900\" height=\"500\"></canvas>");
+  add("<script>"
+      "const ctx = document.getElementById('sensor_tree_canvas').getContext('2d');"
+      "const data = {"
+      "labels: [");
 
-  // Start of the URL with QuickChart.io base URL
-  add
-    ("<center>"
-     "<img src=\"https://quickchart.io/graphviz?graph=digraph%20%7B%20");
-
-#if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-  node_config_t *my_config = node_config_find_by_lladdr(&uip_lladdr);
-  if (my_config) {
-    // Add node name
-    add("%22%s%22;", node_config_get_name(my_config));
-  } else {
-    // Add node address
-    add("%22%04hx%22;",
-        (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
+  // Generate labels for the nodes
+  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+    if(node_info_table[i].isused) {
+      add("\"");
+      ipaddr_add(&node_info_table[i].ipaddr);
+      add("\",");
+    }
   }
-#else
-  // Add node address
-  add("%22%04hx%22;",
-      (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
-#endif
 
-  // Loop through the nodes and add edges
-  for (i = 0; i < UIP_DS6_ROUTE_NB; i++) {
-    if (node_info_table[i].isused) {
-      if (!uip_is_addr_unspecified(&node_info_table[i].ip_parent)) {
-#if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-        node_config_t *node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
-        node_config_t *parent_node_config = node_config_find_by_ip(&node_info_table[i].ip_parent);
-        if (node_config) {
-          if (parent_node_config) {
-            // Add edge with node names
-            add("%22%s%22-%3E%22%s%22;",
-                node_config_get_name(node_config),
-                node_config_get_name(parent_node_config));
-          } else {
-            // Add edge with node name and parent address
-            add("%22%s%22-%3E%22%04hx%22;",
-                node_config_get_name(node_config),
-                (node_info_table[i].ip_parent.u8[14] << 8) +
-                node_info_table[i].ip_parent.u8[15]);
-          }
-        } else {
-          if (parent_node_config) {
-            // Add edge with node address and parent name
-            add("%22%04hx%22-%3E%22%s%22;",
-                (node_info_table[i].ipaddr.u8[14] << 8) +
-                node_info_table[i].ipaddr.u8[15],
-                node_config_get_name(parent_node_config));
-          } else {
-            // Add edge with node addresses
-            add("%22%04hx%22-%3E%22%04hx%22;",
-                (node_info_table[i].ipaddr.u8[14] << 8) +
-                node_info_table[i].ipaddr.u8[15],
-                (node_info_table[i].ip_parent.u8[14] << 8) +
-                node_info_table[i].ip_parent.u8[15]);
-          }
-        }
-#else
-        // Add edge with node addresses
-        add("%22%04hx%22-%3E%22%04hx%22;",
-            (node_info_table[i].ipaddr.u8[14] << 8) +
-            node_info_table[i].ipaddr.u8[15],
-            (node_info_table[i].ip_parent.u8[14] << 8) +
-            node_info_table[i].ip_parent.u8[15]);
-#endif
-        SEND_STRING(&s->sout, buf);
-        reset_buf();
+  add("],"
+      "datasets: [{"
+      "label: 'Parent',"
+      "data: [");
+
+  // Generate parent data
+  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+    if(node_info_table[i].isused) {
+      if(!uip_is_addr_unspecified(&node_info_table[i].ip_parent)) {
+        add("{x: '");
+        ipaddr_add(&node_info_table[i].ipaddr);
+        add("', y: '");
+        ipaddr_add(&node_info_table[i].ip_parent);
+        add("'},");
       }
     }
   }
 
-  // Close the Graphviz graph
-  add("%7D\" alt=\"Sensor Tree\" /></center>");
+  add("],"
+      "backgroundColor: 'rgba(75, 192, 192, 0.2)',"
+      "borderColor: 'rgba(75, 192, 192, 1)',"
+      "borderWidth: 1"
+      "}]"
+      "};"
+      "const config = {"
+      "type: 'scatter',"
+      "data: data,"
+      "options: {"
+      "scales: {"
+      "x: {"
+      "beginAtZero: true"
+      "},"
+      "y: {"
+      "beginAtZero: true"
+      "}"
+      "}"
+      "}"
+      "};"
+      "const sensorTreeChart = new Chart(ctx, config);"
+      "</script>");
   SEND_STRING(&s->sout, buf);
   reset_buf();
 
-  // Print the generated URL for debugging
-  printf("Generated URL: %s\n", buf);
-
   PSOCK_END(&s->sout);
 }
-
 
 static
 PT_THREAD(generate_sensors_prr(struct httpd_state *s))
