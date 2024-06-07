@@ -239,46 +239,58 @@ PT_THREAD(generate_sensors_tree(struct httpd_state *s))
 {
   static int i;
   PSOCK_BEGIN(&s->sout);
+
+  // Start of the URL with QuickChart.io base URL
   add
     ("<center>"
      "<img src=\"https://quickchart.io/graphviz?graph=digraph%20%7B%20");
+
 #if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-  node_config_t *  my_config = node_config_find_by_lladdr(&uip_lladdr);
+  node_config_t *my_config = node_config_find_by_lladdr(&uip_lladdr);
   if (my_config) {
-    add("%%22%s%%22;", node_config_get_name(my_config));
+    // Add node name
+    add("%22%s%22;", node_config_get_name(my_config));
   } else {
-   add("%%22%04hx%%22;",
-     (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
+    // Add node address
+    add("%22%04hx%22;",
+        (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
   }
 #else
-  add("%%22%04hx%%22;",
-    (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
+  // Add node address
+  add("%22%04hx%22;",
+      (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
 #endif
-  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
-    if(node_info_table[i].isused) {
-      if(! uip_is_addr_unspecified(&node_info_table[i].ip_parent)) {
+
+  // Loop through the nodes and add edges
+  for (i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+    if (node_info_table[i].isused) {
+      if (!uip_is_addr_unspecified(&node_info_table[i].ip_parent)) {
 #if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-        node_config_t * node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
-        node_config_t * parent_node_config = node_config_find_by_ip(&node_info_table[i].ip_parent);
-        if ( node_config ) {
-          if ( parent_node_config ) {
-            add("%%22%s%%22%2D%3E%%22%s%%22;",
+        node_config_t *node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
+        node_config_t *parent_node_config = node_config_find_by_ip(&node_info_table[i].ip_parent);
+        if (node_config) {
+          if (parent_node_config) {
+            // Add edge with node names
+            add("%22%s%22-%3E%22%s%22;",
                 node_config_get_name(node_config),
                 node_config_get_name(parent_node_config));
           } else {
-            add("%%22%s%%22%2D%3E%%22%04hx%%22;",
+            // Add edge with node name and parent address
+            add("%22%s%22-%3E%22%04hx%22;",
                 node_config_get_name(node_config),
                 (node_info_table[i].ip_parent.u8[14] << 8) +
                 node_info_table[i].ip_parent.u8[15]);
           }
         } else {
           if (parent_node_config) {
-            add("%%22%04hx%%22%2D%3E%%22%s%%22;",
+            // Add edge with node address and parent name
+            add("%22%04hx%22-%3E%22%s%22;",
                 (node_info_table[i].ipaddr.u8[14] << 8) +
                 node_info_table[i].ipaddr.u8[15],
                 node_config_get_name(parent_node_config));
           } else {
-            add("%%22%04hx%%22%2D%3E%%22%04hx%%22;",
+            // Add edge with node addresses
+            add("%22%04hx%22-%3E%22%04hx%22;",
                 (node_info_table[i].ipaddr.u8[14] << 8) +
                 node_info_table[i].ipaddr.u8[15],
                 (node_info_table[i].ip_parent.u8[14] << 8) +
@@ -286,7 +298,8 @@ PT_THREAD(generate_sensors_tree(struct httpd_state *s))
           }
         }
 #else
-        add("%%22%04hx%%22%2D%3E%%22%04hx%%22;",
+        // Add edge with node addresses
+        add("%22%04hx%22-%3E%22%04hx%22;",
             (node_info_table[i].ipaddr.u8[14] << 8) +
             node_info_table[i].ipaddr.u8[15],
             (node_info_table[i].ip_parent.u8[14] << 8) +
@@ -297,12 +310,18 @@ PT_THREAD(generate_sensors_tree(struct httpd_state *s))
       }
     }
   }
-  add("}\"alt=\"\" /></center>");
+
+  // Close the Graphviz graph
+  add("%7D\" alt=\"Sensor Tree\" /></center>");
   SEND_STRING(&s->sout, buf);
   reset_buf();
 
+  // Print the generated URL for debugging
+  printf("Generated URL: %s\n", buf);
+
   PSOCK_END(&s->sout);
 }
+
 
 static
 PT_THREAD(generate_sensors_prr(struct httpd_state *s))
