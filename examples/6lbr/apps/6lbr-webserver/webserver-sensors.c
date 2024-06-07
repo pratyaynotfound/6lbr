@@ -305,80 +305,76 @@ PT_THREAD(generate_sensors_tree(struct httpd_state *s))
 }
 
 static
-PT_THREAD(generate_sensors_prr(struct httpd_state *s))
+PT_THREAD(generate_sensors_tree(struct httpd_state *s))
 {
   static int i;
-
   PSOCK_BEGIN(&s->sout);
-  SEND_STRING(&s->sout, graph_top);
-  add("['Sensor', 'IP', 'PRR Up', 'PRR Down'],");
-  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
-    if(node_info_table[i].isused && node_info_table[i].messages_sent > 0 && node_info_table[i].replies_sent > 0) {
-      float prr_up = 100.0 * (node_info_table[i].messages_sent - node_info_table[i].up_messages_lost)/node_info_table[i].messages_sent;
-      float prr_down = 100.0 * (node_info_table[i].replies_sent - node_info_table[i].down_messages_lost)/node_info_table[i].replies_sent;
+  add
+    ("<center>"
+     "<img src=\"https://quickchart.io/graphviz?graph=digraph%20%7B%20");
 #if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-      if (node_config_loaded) {
-        node_config_t * node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
-        add("[\"%s\",", node_config_get_name(node_config));
-      } else
+  node_config_t * my_config = node_config_find_by_lladdr(&uip_lladdr);
+  if (my_config) {
+    add("%22%s%22;", node_config_get_name(my_config));
+  } else {
+    add("%22%04hx%22;",
+      (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
+  }
+#else
+  add("%22%04hx%22;",
+    (uip_lladdr.addr[6] << 8) + uip_lladdr.addr[7]);
 #endif
-      {
-        add("[\"");
-        ipaddr_add(&node_info_table[i].ipaddr);
-        add("\",");
+
+  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
+    if(node_info_table[i].isused) {
+      if(!uip_is_addr_unspecified(&node_info_table[i].ip_parent)) {
+#if CETIC_6LBR_NODE_CONFIG_HAS_NAME
+        node_config_t * node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
+        node_config_t * parent_node_config = node_config_find_by_ip(&node_info_table[i].ip_parent);
+        if (node_config) {
+          if (parent_node_config) {
+            add("%22%s%22->%22%s%22;",
+                node_config_get_name(node_config),
+                node_config_get_name(parent_node_config));
+          } else {
+            add("%22%s%22->%22%04hx%22;",
+                node_config_get_name(node_config),
+                (node_info_table[i].ip_parent.u8[14] << 8) +
+                node_info_table[i].ip_parent.u8[15]);
+          }
+        } else {
+          if (parent_node_config) {
+            add("%22%04hx%22->%22%s%22;",
+                (node_info_table[i].ipaddr.u8[14] << 8) +
+                node_info_table[i].ipaddr.u8[15],
+                node_config_get_name(parent_node_config));
+          } else {
+            add("%22%04hx%22->%22%04hx%22;",
+                (node_info_table[i].ipaddr.u8[14] << 8) +
+                node_info_table[i].ipaddr.u8[15],
+                (node_info_table[i].ip_parent.u8[14] << 8) +
+                node_info_table[i].ip_parent.u8[15]);
+          }
+        }
+#else
+        add("%22%04hx%22->%22%04hx%22;",
+            (node_info_table[i].ipaddr.u8[14] << 8) +
+            node_info_table[i].ipaddr.u8[15],
+            (node_info_table[i].ip_parent.u8[14] << 8) +
+            node_info_table[i].ip_parent.u8[15]);
+#endif
+        SEND_STRING(&s->sout, buf);
+        reset_buf();
       }
-      add("\"");
-      ipaddr_add(&node_info_table[i].ipaddr);
-      add("\",%.1f,%.1f],", prr_up, prr_down);
-      SEND_STRING(&s->sout, buf);
-      reset_buf();
     }
   }
-  add("]);var options={vAxis:{minValue: 0,maxValue: 100},legend:{position: \"none\"}};");
+  add("}\" alt=\"Sensor Tree\" /></center>");
   SEND_STRING(&s->sout, buf);
   reset_buf();
 
-  SEND_STRING(&s->sout,graph_2_column);
-  SEND_STRING(&s->sout,graph_bottom);
   PSOCK_END(&s->sout);
 }
 
-static
-PT_THREAD(generate_sensors_parent_switch(struct httpd_state *s))
-{
-  static int i;
-
-  PSOCK_BEGIN(&s->sout);
-  SEND_STRING(&s->sout, graph_top);
-  add("['Sensor', 'IP', 'Parent switch'],");
-  for(i = 0; i < UIP_DS6_ROUTE_NB; i++) {
-    if(node_info_table[i].isused && node_info_table[i].messages_sent > 0) {
-#if CETIC_6LBR_NODE_CONFIG_HAS_NAME
-      if (node_config_loaded) {
-        node_config_t * node_config = node_config_find_by_ip(&node_info_table[i].ipaddr);
-        add("[\"%s\",", node_config_get_name(node_config));
-      } else
-#endif
-      {
-        add("[\"");
-        ipaddr_add(&node_info_table[i].ipaddr);
-        add("\",");
-      }
-      add("\"");
-      ipaddr_add(&node_info_table[i].ipaddr);
-      add("\",%d],", node_info_table[i].parent_switch);
-      SEND_STRING(&s->sout, buf);
-      reset_buf();
-    }
-  }
-  add("]);var options={vAxis:{minValue: 0},legend:{position: \"none\"}};");
-  SEND_STRING(&s->sout, buf);
-  reset_buf();
-
-  SEND_STRING(&s->sout,graph_1_column);
-  SEND_STRING(&s->sout,graph_bottom);
-  PSOCK_END(&s->sout);
-}
 
 static
 PT_THREAD(generate_sensors_hop_count(struct httpd_state *s))
